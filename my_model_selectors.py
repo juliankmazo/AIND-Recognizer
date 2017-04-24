@@ -75,31 +75,45 @@ class SelectorBIC(ModelSelector):
         :return: GaussianHMM object
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-        BIC = float('Inf')
-        best_model = None
-        fitted_model = None
+        x = []
+        y = []
+        best_n = 2
 
-        for Nb_states in range(self.min_n_components, self.max_n_components + 1):
-            try:
-                fitted_model = GaussianHMM(n_components=Nb_states,
-                                           n_iter=1000,
-                                           random_state=self.random_state,
-                                          ).fit(self.X, self.lengths)
+        if len(self.sequences) > 1:
+            for n in range(self.min_n_components, self.max_n_components):
+                bic = 0
+                count = 0
+                min_splits = min(len(self.lengths), 3)
+                split_method = KFold(n_splits=min_splits)
 
-                log_l = fitted_model.score(self.X, self.lengths)
-                N = len(self.X)
-                n_dimensions = self.X.shape[1]
-                p = (Nb_states - 1) + (Nb_states * n_dimensions) + Nb_states * n_dimensions * (n_dimensions + 1) / 2.
-                BIC_temp = -2 * log_l + p * np.log(N)
-            except:
-                BIC_temp = float('Inf')
+                for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                    try:
+                        x_train = np.concatenate(np.array(self.sequences)[cv_train_idx])
+                        l_train = np.array(self.lengths)[cv_train_idx]
+                        model = GaussianHMM(n_components=n,
+                                            n_iter=1000,
+                                            random_state=self.random_state)\
+                            .fit(x_train, l_train)
 
-            if BIC_temp < BIC:
-                BIC = BIC_temp
-                best_model = fitted_model
+                        x_test = np.concatenate(np.array(self.sequences)[cv_test_idx])
+                        l_test = np.array(self.lengths)[cv_test_idx]
+                        bic += -2 * model.score(x_test, l_test) + 2 * n * len(self.sequences[0])\
+                            * np.log(np.array(self.lengths)[cv_test_idx].sum())
+                        count += 1
+                    except:
+                        pass
 
-        return best_model
+                if count > 0 and bic != 0:
+                    y.append(bic / count)
+                    x.append(n)
 
+        if len(y) > 0:
+            best_n = x[y.index(min(y))]
+
+        return GaussianHMM(n_components=best_n,
+                           n_iter=1000,
+                           random_state=self.random_state)\
+            .fit(self.X, self.lengths)
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion
@@ -113,8 +127,58 @@ class SelectorDIC(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        x = []
+        y = []
+        best_n = 2
+
+        if len(self.sequences) > 1:
+            for n in range(self.min_n_components, self.max_n_components):
+                count = 0
+                dic = 0
+                log_l = 0
+                min_splits = min(len(self.lengths), 3)
+                split_method = KFold(n_splits=min_splits)
+
+                for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                    try:
+                        x_train = np.concatenate(np.array(self.sequences)[cv_train_idx])
+                        l_train = np.array(self.lengths)[cv_train_idx]
+                        model = GaussianHMM(n_components=n,
+                                            n_iter=1000,
+                                            random_state=self.random_state)\
+                            .fit(x_train, l_train)
+
+                        x_test = np.concatenate(np.array(self.sequences)[cv_test_idx])
+                        l_test = np.array(self.lengths)[cv_test_idx]
+                        log_l = model.score(x_test, l_test)
+
+                        count_d_l = 0
+                        log_d_l = 0
+                        correction = 0
+
+                        for w in self.words.keys():
+                            if w != self.this_word:
+                                log_d_l += model.score(self.hwords[w][0], self.hwords[w][1])
+                                count_d_l += 1
+                                correction += 2 * n * len(self.sequences[0]) / 2 * \
+                                    np.log(sum(self.hwords[w][1]) / np.array(self.lengths)[cv_test_idx].sum())
+
+                        dic += log_l - log_d_l / (count_d_l - 1) + correction
+                        count += 1
+                    except:
+                        pass
+
+                if count > 0 and dic != 0:
+                    y.append(dic / count)
+                    x.append(n)
+
+        if len(y) > 0:
+            best_n = x[y.index(max(y))]
+
+        return GaussianHMM(n_components=best_n,
+                           n_iter=1000,
+                           random_state=self.random_state).fit(self.X, self.lengths)
+
 
 
 class SelectorCV(ModelSelector):
@@ -125,5 +189,38 @@ class SelectorCV(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        x = []
+        y = []
+        best_n = 2
+
+        if len(self.sequences) > 1:
+            for n in range(self.min_n_components, self.max_n_components):
+                count = 0
+                log_l = 0
+                min_splits = min(len(self.lengths), 3)
+                split_method = KFold(n_splits=min_splits)
+
+                for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                    try:
+                        x_train = np.concatenate(np.array(self.sequences)[cv_train_idx])
+                        l_train = np.array(self.lengths)[cv_train_idx]
+                        model = GaussianHMM(n_components=n,
+                                            n_iter=1000,
+                                            random_state=self.random_state)\
+                            .fit(x_train, l_train)
+
+                        x_test = np.concatenate(np.array(self.sequences)[cv_test_idx])
+                        l_test = np.array(self.lengths)[cv_test_idx]
+                        log_l += model.score(x_test, l_test)
+                        count += 1
+                    except:
+                        pass
+
+                if count > 0 and log_l != 0:
+                    y.append(log_l / count)
+                    x.append(n)
+
+        if len(y) > 0:
+            best_n = x[y.index(max(y))]
+
+        return GaussianHMM(n_components=best_n, n_iter=1000, random_state=self.random_state).fit(self.X, self.lengths)
