@@ -94,8 +94,9 @@ class SelectorBIC(ModelSelector):
 
                         x_test = np.concatenate(np.array(self.sequences)[cv_test_idx])
                         l_test = np.array(self.lengths)[cv_test_idx]
-                        bic += -2 * model.score(x_test, l_test) + 2 * n * len(self.sequences[0])\
-                            * np.log(np.array(self.lengths)[cv_test_idx].sum())
+                        p_term = n ** 2 + 2 * n * len(self.X[0]) - 1
+                        bic += -2 * model.score(x_test, l_test) + p_term * \
+                            np.log(np.array(self.lengths)[cv_test_idx].sum())
                         count += 1
                     except:
                         pass
