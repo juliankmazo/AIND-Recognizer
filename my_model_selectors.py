@@ -1,11 +1,8 @@
-import math
-import statistics
 import warnings
 
 import numpy as np
 from hmmlearn.hmm import GaussianHMM
 from sklearn.model_selection import KFold
-from asl_utils import combine_sequences
 
 
 class ModelSelector(object):
@@ -75,10 +72,46 @@ class SelectorBIC(ModelSelector):
         :return: GaussianHMM object
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        x = []
+        y = []
+        best_n = 2
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        if len(self.sequences) > 1:
+            for n in range(self.min_n_components, self.max_n_components):
+                bic = 0
+                count = 0
+                min_splits = min(len(self.lengths), 3)
+                split_method = KFold(n_splits=min_splits)
 
+                for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                    try:
+                        x_train = np.concatenate(np.array(self.sequences)[cv_train_idx])
+                        l_train = np.array(self.lengths)[cv_train_idx]
+                        model = GaussianHMM(n_components=n,
+                                            n_iter=1000,
+                                            random_state=self.random_state)\
+                            .fit(x_train, l_train)
+
+                        x_test = np.concatenate(np.array(self.sequences)[cv_test_idx])
+                        l_test = np.array(self.lengths)[cv_test_idx]
+                        p_term = n ** 2 + 2 * n * len(self.X[0]) - 1
+                        bic += -2 * model.score(x_test, l_test) + p_term * \
+                            np.log(np.array(self.lengths)[cv_test_idx].sum())
+                        count += 1
+                    except:
+                        pass
+
+                if count > 0 and bic != 0:
+                    y.append(bic / count)
+                    x.append(n)
+
+        if len(y) > 0:
+            best_n = x[y.index(min(y))]
+
+        return GaussianHMM(n_components=best_n,
+                           n_iter=1000,
+                           random_state=self.random_state)\
+            .fit(self.X, self.lengths)
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion
@@ -92,8 +125,58 @@ class SelectorDIC(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        x = []
+        y = []
+        best_n = 2
+
+        if len(self.sequences) > 1:
+            for n in range(self.min_n_components, self.max_n_components):
+                count = 0
+                dic = 0
+                log_l = 0
+                min_splits = min(len(self.lengths), 3)
+                split_method = KFold(n_splits=min_splits)
+
+                for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                    try:
+                        x_train = np.concatenate(np.array(self.sequences)[cv_train_idx])
+                        l_train = np.array(self.lengths)[cv_train_idx]
+                        model = GaussianHMM(n_components=n,
+                                            n_iter=1000,
+                                            random_state=self.random_state)\
+                            .fit(x_train, l_train)
+
+                        x_test = np.concatenate(np.array(self.sequences)[cv_test_idx])
+                        l_test = np.array(self.lengths)[cv_test_idx]
+                        log_l = model.score(x_test, l_test)
+
+                        count_d_l = 0
+                        log_d_l = 0
+                        correction = 0
+
+                        for w in self.words.keys():
+                            if w != self.this_word:
+                                log_d_l += model.score(self.hwords[w][0], self.hwords[w][1])
+                                count_d_l += 1
+                                correction += 2 * n * len(self.sequences[0]) / 2 * \
+                                    np.log(sum(self.hwords[w][1]) / np.array(self.lengths)[cv_test_idx].sum())
+
+                        dic += log_l - log_d_l / (count_d_l - 1) + correction
+                        count += 1
+                    except:
+                        pass
+
+                if count > 0 and dic != 0:
+                    y.append(dic / count)
+                    x.append(n)
+
+        if len(y) > 0:
+            best_n = x[y.index(max(y))]
+
+        return GaussianHMM(n_components=best_n,
+                           n_iter=1000,
+                           random_state=self.random_state).fit(self.X, self.lengths)
+
 
 
 class SelectorCV(ModelSelector):
@@ -104,5 +187,38 @@ class SelectorCV(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        x = []
+        y = []
+        best_n = 2
+
+        if len(self.sequences) > 1:
+            for n in range(self.min_n_components, self.max_n_components):
+                count = 0
+                log_l = 0
+                min_splits = min(len(self.lengths), 3)
+                split_method = KFold(n_splits=min_splits)
+
+                for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                    try:
+                        x_train = np.concatenate(np.array(self.sequences)[cv_train_idx])
+                        l_train = np.array(self.lengths)[cv_train_idx]
+                        model = GaussianHMM(n_components=n,
+                                            n_iter=1000,
+                                            random_state=self.random_state)\
+                            .fit(x_train, l_train)
+
+                        x_test = np.concatenate(np.array(self.sequences)[cv_test_idx])
+                        l_test = np.array(self.lengths)[cv_test_idx]
+                        log_l += model.score(x_test, l_test)
+                        count += 1
+                    except:
+                        pass
+
+                if count > 0 and log_l != 0:
+                    y.append(log_l / count)
+                    x.append(n)
+
+        if len(y) > 0:
+            best_n = x[y.index(max(y))]
+
+        return GaussianHMM(n_components=best_n, n_iter=1000, random_state=self.random_state).fit(self.X, self.lengths)

@@ -1,4 +1,5 @@
 import warnings
+from operator import itemgetter
 from asl_data import SinglesData
 
 
@@ -20,6 +21,18 @@ def recognize(models: dict, test_set: SinglesData):
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     probabilities = []
     guesses = []
-    # TODO implement the recognizer
-    # return probabilities, guesses
-    raise NotImplementedError
+
+    for index, (x, length) in test_set.get_all_Xlengths().items():
+        probs = []
+
+        for word, model in models.items():
+            try:
+                score = model.score(x, length)
+                probs.append((word, score))
+            except:
+                probs.append((word, float('-inf')))
+
+        guess = max(probs, key=itemgetter(1))[0]
+        probabilities.append(dict(probs))
+        guesses.append(guess)
+    return probabilities, guesses
